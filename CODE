@@ -1,0 +1,115 @@
+import threading
+import os
+from tkinter import *
+from tkinter import filedialog, messagebox
+from pytube import YouTube
+from tkinter.ttk import Progressbar, Combobox
+
+# Initialize the main window
+root = Tk()
+root.geometry('500x450')
+root.title("YouTube Video Downloader")
+
+# Change the background color
+root.config(bg='#E6E6FA')  # Light blue background
+
+# Labels and entries for the UI
+Label(root, text='YouTube Video Downloader', font='arial 15 bold', bg='#E6E6FA').pack()
+link = StringVar()
+Label(root, text='Paste Link Here:', font='arial 13 bold', bg='#E6E6FA').place(x=160, y=40)
+link_enter = Entry(root, width=50, textvariable=link).place(x=50, y=90)
+
+download_path = StringVar()
+Label(root, text='Select Download Location:', font='arial 13 bold', bg='#E6E6FA').place(x=140, y=130)
+path_label = Entry(root, width=50, textvariable=download_path).place(x=50, y=160)
+
+# Function to browse and select download path
+def browse_path():
+    path = filedialog.askdirectory()
+    download_path.set(path)
+
+Button(root, text='Browse', font='arial 12', command=browse_path).place(x=192, y=190)
+
+# Combobox for selecting resolution
+resolution = StringVar()
+resolutions_combobox = Combobox(root, textvariable=resolution, width=48)
+resolutions_combobox.place(x=50, y=230)
+
+# Checkbutton for audio-only download
+audio_only = BooleanVar()
+Checkbutton(root, text='Download Audio Only', variable=audio_only, bg='#E6E6FA').place(x=50, y=270)
+
+# Progress bar for download status
+progress = Progressbar(root, orient=HORIZONTAL, length=400, mode='determinate')
+progress.place(x=50, y=300)
+
+# Label to show the status
+status_label = Label(root, text='', font='arial 13', bg='#E6E6FA')
+status_label.place(x=50, y=330)
+
+# Function to fetch video details and populate resolution options
+def fetch_video_details():
+    try:
+        yt = YouTube(link.get())
+        streams = yt.streams.filter(progressive=True)
+        available_resolutions = [stream.resolution for stream in streams]
+        resolutions_combobox['values'] = available_resolutions
+        if available_resolutions:
+            resolutions_combobox.current(0)  # Select the first resolution by default
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to fetch video details: {e}")
+
+# Function to download video or audio
+def download_video():
+    try:
+        yt = YouTube(link.get(), on_progress_callback=on_progress)
+
+        # Check if audio-only is selected
+        if audio_only.get():
+            stream = yt.streams.filter(only_audio=True).first()
+            if not stream:
+                raise ValueError("No audio stream available for this video.")
+            file_extension = 'mp3'  # Typically the output audio format is .mp3
+        else:
+            stream = yt.streams.filter(res=resolution.get(), progressive=True).first()
+            if not stream:
+                stream = yt.streams.get_highest_resolution()  # Fallback to highest resolution if the selected one is unavailable
+            file_extension = 'mp4'  # Default video format
+
+        status_label.config(text='Downloading...')
+        download_dir = download_path.get() or '.'  # Use current directory if no path is provided
+        file_path = stream.download(output_path=download_dir)
+        
+        # Rename file to have .mp3 extension if audio-only
+        if audio_only.get() and file_path:
+            base, ext = os.path.splitext(file_path)
+            new_file_path = base + ".mp3"
+            os.rename(file_path, new_file_path)
+            file_path = new_file_path
+
+        status_label.config(text='Download Complete')
+        messagebox.showinfo("Success", f"Download Completed: {file_path}")
+
+    except Exception as e:
+        status_label.config(text=f'Error: {str(e)}')
+        messagebox.showerror("Error", f"Failed to download: {e}")
+
+# Function to update progress bar
+def on_progress(stream, chunk, bytes_remaining):
+    total_size = stream.filesize
+    bytes_downloaded = total_size - bytes_remaining
+    percentage_completed = (bytes_downloaded / total_size) * 100
+    progress['value'] = percentage_completed
+    root.update_idletasks()
+
+# Function to start the download in a new thread
+def start_download():
+    threading.Thread(target=download_video).start()
+
+# Fetch video details when link is provided
+link.trace('w', lambda *args: fetch_video_details())
+
+# Button to start download
+Button(root, text='Download', font='arial 15 bold', padx=2, command=start_download).place(x=180, y=360)
+
+root.mainloop()
